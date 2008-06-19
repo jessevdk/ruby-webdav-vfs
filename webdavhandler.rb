@@ -273,7 +273,7 @@ class WebDAVHandler < AbstractServlet
 		
 		if req.body.nil?
 			# Could be a lock refresh
-			matches = parse_if_header(req, res)
+			matches = parse_if_header(req)
 			
 			matches.each do |match|
 				res = match[0].empty? ? resource : match[0]
@@ -282,17 +282,17 @@ class WebDAVHandler < AbstractServlet
 					@vfs.refresh(lock) if if_match(req, lock, [res, match[1]])
 				end
 			end
+			
+			raise HTTPStatus::NoContent
 		else
 			ns = {""=>"DAV:"}
-			items = REXML::XPath.match(req_doc, "/lockinfo", ns)
-			
-			raise HTTPStatus::BadRequest if (items.nil? or items.empty?)
-			item = items.first
-			
+			item = REXML::XPath.first(req_doc, "/lockinfo", ns)
+
+			raise HTTPStatus::BadRequest unless item
 			depth = req['Depth'] == 'infinite' ? 'infinite' : 0
-			scope = (v = REXML::XPath.match(item, 'lockscope', ns).first) and v.first.name
-			type = (v = REXML::XPath.match(item, 'locktype', ns).first) and v.first.name
-			owner = REXML::XPath.match(item, 'owner', ns).first
+			scope = (v = REXML::XPath.first(item, 'lockscope', ns)) and v.name
+			type = (v = REXML::XPath.first(item, 'locktype', ns)) and v.name
+			owner = REXML::XPath.first(item, 'owner', ns)
 				
 			# Try to lock the resource
 			lock = @vfs.lock(resource, :depth => depth, :scope => scope, :type => type, :owner => owner, :uid => req.user)
@@ -338,7 +338,7 @@ class WebDAVHandler < AbstractServlet
 	end
 
 	def propfind_response(req, res, props, depth)
-		ret = get_rec_prop(req, res, res.filename, HTTPUtils.escape(codeconv_str_fscode2utf(req.path)), req_props, *[depth].compact)
+		ret = get_rec_prop(req, res, res.filename, HTTPUtils.escape(codeconv_str_fscode2utf(req.path)), props, *[depth].compact)
 
 		res.body << build_multistat(ret).to_s
 		res["Content-Type"] = 'text/xml; charset="utf-8"'
@@ -442,7 +442,7 @@ class WebDAVHandler < AbstractServlet
 	end
 	
 	def parse_if_header(req)
-		return nil unless req['If']
+		return [] unless req['If']
 		
 		matches = []
 		token = '<[^>]*>'
@@ -465,7 +465,7 @@ class WebDAVHandler < AbstractServlet
 		return nil unless @vfs.locking?
 		
 		# Get locks on this resource
-		locks = @vfs.locked?(resource or res.filename)
+		locks = @vfs.locked?(resource || res.filename)
 		
 		# Check if the current user is the owner of one of the locks
 		matches = parse_if_header(req)
@@ -716,23 +716,29 @@ class WebDAVHandler < AbstractServlet
 	def get_prop_lockdiscovery(req, props)
 		raise HTTPStatus::NotFound unless @vfs.locking?
 		
-		lock = @vfs.locked?(props.filename)
-		raise PropIgnore unless lock
+		locks = @vfs.locked?(props.filename)
+		raise IgnoreProp unless locks
 		
-		e = lock_entry('activelock', lock.scope, lock.type)
-		e << gen_element('D:depth', lock.depth)
+		discovery = REXML::Element.new('D:lockdiscovery')
 		
-		if lock.owner
-			e << (REXML::Element.new('D:owner') << lock.owner)
+		locks.each do |lock|
+				e = lock_entry('activelock', lock.scope, lock.type)
+			e << gen_element('D:depth', lock.depth)
+		
+			if lock.owner
+				e << (REXML::Element.new('D:owner') << lock.owner)
+			end
+		
+			if lock.timeout
+				e << gen_element('D:timeout', lock.timeout)
+			end
+		
+			e << (REXML::Element.new('D:locktoken') << gen_element('D:href', "opaquelocktoken:#{lock.token}"))
+			
+			discovery << e
 		end
 		
-		if lock.timeout
-			e << gen_element('D:timeout', lock.timeout)
-		end
-		
-		e << (REXML::Element.new('D:locktoken') << gen_element('D:href', "opaquelocktoken:#{lock.token}"))
-		
-		REXML::Element.new('D:lockdiscovery') << e
+		discovery
 	end
 	
 	def lock_entry(name, scope, type)
