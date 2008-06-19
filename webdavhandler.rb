@@ -258,19 +258,82 @@ class WebDAVHandler < AbstractServlet
 		end
 	end
 
-	# TODO:
-	#	 class 2 protocols; LOCK UNLOCK
-	#def do_LOCK(req, res)
-	#end
-	#def do_UNLOCK(req, res)
-	#end
+	def do_LOCK(req, res)
+		raise HTTPStatus::NotImplemented unless @vfs.locking?
+		
+		begin
+			req_doc = REXML::Document.new req.body
+		rescue REXML::ParseException
+			raise HTTPStatus::BadRequest
+		end
+		
+		if req.body.nil?
+			# Could be a lock refresh
+			raise HTTPStatus::BadRequest if req['If'].nil?
+		else
+			# Find resource
+			resource = parse_filename(req, res)
+			
+			ns = {""=>"DAV:"}
+			items = REXML::XPath.match(req_doc, "/lockinfo", ns)
+			
+			raise HTTPStatus::BadRequest if (items.nil? or items.empty?)
+			item = items.first
+			
+			depth = req['Depth'] == 'infinite' ? 'infinite' : 0
+			scope = (v = REXML::XPath.match(item, 'lockscope', ns).first) and v.first.name
+			type = (v = REXML::XPath.match(item, 'locktype', ns).first) and v.first.name
+			owner = REXML::XPath.match(item, 'owner', ns).first
+				
+			# Try to lock the resource
+			lock = @vfs.lock(resource, :depth => depth, :scope => scope, :type => type, :owner => owner, :uid => req.user)
+			
+			if not lock				
+				res.body << build_multistat([[req.request_uri, elem_status(req, res, HTTPStatus::Locked)]]).to_s(0)
+
+				res["Content-Type"] = 'text/xml; charset="utf-8"'
+				raise HTTPStatus::MultiStatus
+			end
+			
+			# Respond with propfinding the lockdiscovery property
+			res['Lock-Token'] = "<opaquetoken:#{lock.token}>"
+			propfind_response(req, res, ['lockdiscovery'], 0)
+		end
+	end
+	
+	def do_UNLOCK(req, res)
+		raise HTTPStatus::NotImplemented unless @vfs.locking?
+		
+		resource = parse_filename(req, res)
+		
+		if not req['Lock-Token'] =~ /<opaquelocktoken:(.*)>/
+			raise HTTPStatus::BadRequest
+		end
+		
+		if @vfs.unlock(resource, $1, req.user)
+			raise HTTPStatus::NoContent
+		else
+			raise HTTPStatus::Forbidden
+		end
+	end
 
 	def do_OPTIONS(req, res)
 		@logger.debug "run do_OPTIONS"
-		#res["DAV"] = "1,2"
-		res["DAV"] = "1"
+		
+		# Just pretend to support class 2 functions like locking to fool
+		# OS X into thinking we can. This allows OS X to access resources
+		# read/write instead of read-only
+		res["DAV"] = @vfs.locking? ? "2" : "1"
 		res["MS-Author-Via"] = "DAV"
 		super
+	end
+
+	def propfind_response(req, res, props, depth)
+		ret = get_rec_prop(req, res, res.filename, HTTPUtils.escape(codeconv_str_fscode2utf(req.path)), req_props, *[depth].compact)
+
+		res.body << build_multistat(ret).to_s
+		res["Content-Type"] = 'text/xml; charset="utf-8"'
+		raise HTTPStatus::MultiStatus
 	end
 
 	def do_PROPFIND(req, res)
@@ -286,12 +349,13 @@ class WebDAVHandler < AbstractServlet
 			raise HTTPStatus::BadRequest
 		end
 
-		puts req
-
 		ns = {""=>"DAV:"}
 		req_props = []
-		all_props = %w(creationdate getlastmodified getetag
-									 resourcetype getcontenttype getcontentlength)
+		all_props = %w(creationdate getlastmodified getetag resourcetype getcontenttype getcontentlength)
+		
+		if @vfs.locking?
+			all_props += %w(suppertedlock lockdiscovery)
+		end	 
 
 		if req.body.nil? || !REXML::XPath.match(req_doc, "/propfind/allprop", ns).empty?
 			req_props = all_props
@@ -306,12 +370,7 @@ class WebDAVHandler < AbstractServlet
 			raise HTTPStatus::BadRequest
 		end
 
-		ret = get_rec_prop(req, res, res.filename,
-											 HTTPUtils.escape(codeconv_str_fscode2utf(req.path)),
-											 req_props, *[depth].compact)
-		res.body << build_multistat(ret).to_s
-		res["Content-Type"] = 'text/xml; charset="utf-8"'
-		raise HTTPStatus::MultiStatus
+		propfind_response(req, res, req_props, depth)		
 	end
 
 	def do_PROPPATCH(req, res)
@@ -537,7 +596,7 @@ class WebDAVHandler < AbstractServlet
 	def get_propstat(req, res, file, props)
 		propstat = REXML::Element.new "D:propstat"
 		errstat = {}
-		#begin
+		begin
 			st = @vfs.properties(file)
 			pe = REXML::Element.new "D:prop"
 			props.each {|pname|
@@ -555,9 +614,10 @@ class WebDAVHandler < AbstractServlet
 			}
 			propstat.elements << pe
 			propstat.elements << elem_status(req, res, HTTPStatus::OK)
-		#rescue
-		#	propstat.elements << elem_status(req, res, HTTPStatus::InternalServerError)
-		#end
+		rescue
+			propstat.elements << elem_status(req, res, HTTPStatus::InternalServerError)
+		end
+
 		propstat
 	end
 
@@ -592,6 +652,44 @@ class WebDAVHandler < AbstractServlet
 	def get_prop_getcontentlength(req, props)
 		gen_element "D:getcontentlength", props.contentlength
 	end
+	
+	def get_prop_lockdiscovery(req, props)
+		raise HTTPStatus::NotFound unless @vfs.locking?
+		
+		lock = @vfs.locked?(props.filename)
+		raise PropIgnore unless lock
+		
+		e = lock_entry('activelock', lock.scope, lock.type)
+		e << gen_element('D:depth', lock.depth)
+		
+		if lock.owner
+			e << (REXML::Element.new('D:owner') << lock.owner)
+		end
+		
+		if lock.timeout
+			e << gen_element('D:timeout', lock.timeout)
+		end
+		
+		e << (REXML::Element.new('D:locktoken') << gen_element('D:href', "opaquelocktoken:#{lock.token}"))
+		
+		REXML::Element.new('D:lockdiscovery') << e
+	end
+	
+	def lock_entry(name, scope, type)
+		entry = REXML::Element.new("D:#{name}")
+		entry << (REXML::Element.new('D:lockscope') << REXML::Element.new("D:#{scope}"))
+		entry << (REXML::Element.new('D:locktype') << REXML::Element.new("D:#{type}"))
+		
+		entry
+	end
+	
+	def get_prop_supportedlock(req, props)
+		e = REXML::Element.new('D:supportedlock')
+		e << lock_entry('lockentry', 'exclusive', 'write')
+		e << lock_entry('lockentry', 'shared', 'write')
+		
+		e
+	end
 
 	def elem_multistat
 		gen_element "D:multistatus", nil, {"xmlns:D" => "DAV:"}
@@ -609,8 +707,7 @@ class WebDAVHandler < AbstractServlet
 				 HTTPUtils.unescape(URI.parse(req["Destination"]).path)
 			return $'
 		else
-			@logger.error "[BUG] can't resolv destination path. script='#{req.script_name}', path='#{req.path}', dest='#{req["Destination"]}', root='#{@root}'"
-			raise HTTPStatus::InternalServerError
+			return URI.parse(req["Destination"]).path
 		end
 	end
 	

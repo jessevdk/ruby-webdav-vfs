@@ -11,6 +11,10 @@ module VFS
 			@config
 		end
 		
+		def self.locking?
+			false
+		end
+		
 		def self.stream(filename, acc)
 			raise WEBrick::HTTPStatus::NotImplemented
 		end
