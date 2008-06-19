@@ -220,6 +220,8 @@ class WebDAVHandler < AbstractServlet
 	
 	def do_PUT(req, res)
 		map_filename(req, res)
+		
+		check_lock(req, res)
 
 		if req['range']
 			ranges = HTTPUtils::parse_range_header(req['range']) or
