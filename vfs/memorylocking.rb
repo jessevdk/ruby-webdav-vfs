@@ -40,7 +40,7 @@ module MemoryLocking
 			@timeout = timeout
 		end
 		
-		def locked?(resource)
+		def locked?(resource, uid = nil)
 			resource = "/#{resource}" unless resource.first == ?/
 
 			# Check if resource is directly locked
@@ -55,9 +55,12 @@ module MemoryLocking
 				break if item == '/'
 				
 				if lockstore.include?(item)
-					l = lockstore[item]
+					locks = check_timeout(item)
 					
-					return l if l.depth == 'infinite' or l.depth == depth
+					locks.each do |lock|
+						return lock if lock.dept == 'infinite' or lock.depth == depth
+					end
+
 					depth += 1
 				end
 			end
@@ -65,42 +68,53 @@ module MemoryLocking
 			return false
 		end
 		
-		def check_timeout(lock)
-			return lock if lock.timeout.downcase == 'infinite'
+		def check_timeout(resource)
+			lockstore[resource].delete_if! do |lock|
+				lock.timeout and lock.timeout.downcase != 'infinite' and lock.timeout < Time.now
+			end
 			
-			if lock.timeout < Time.now
-				lockstore.remove(lock.resource)
-				nil
+			if lockstore[resource].empty?
+				lockstore.remove(resource)
+				[]
 			else
-				lock
+				lockstore[resource]
 			end
 		end
 		
 		def lock(resource, *properties)
-			l = locked?(resource)
+			locks = locked?(resource)
 			
-			if l and l.timeout
-				l = check_timeout(l)
+			if locks
+				locks.each do |lock|
+					return false if lock.scope == 'exclusive'
+				end
 			end
-			
-			return false if l and l.scope == 'exclusive'
 			
 			if @timeout and not properties.include?(:timeout)
 				properties[:timeout] = @timeout
 			end
 			
-			l = Lock.new(resource, *properties)
-			lockstore[resource] = l
+			lock = Lock.new(resource, *properties)
+			lockstore[resource] = [lock, lockstore[resource]].flatten.compact
 			
-			l
+			lock
 		end
 		
 		def unlock(resource, token, uid = nil)
-			l = locked?(resource)
+			locks = locked?(resource)
+			match = nil
+
+			if locks
+				locks.each do |lock|
+					match = lock.token == token and lock.uid == uid
+					break if match
+				end
+			end
 			
-			return false unless (l and l.token == token and l.uid == uid)
+			return false unless match
+			locks.remove(match)
 			
-			lockstore.remove(resource)
+			lockstore.remove(match.resource) if locks.emty?
 
 			true
 		end
