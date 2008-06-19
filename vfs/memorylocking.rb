@@ -13,9 +13,9 @@ module MemoryLocking
 		
 		def initialize(resource, *properties)
 			@resource = resource
-			@properties = properties
+			@properties = properties.first
 			
-			@token = UIID.random_create.to_s
+			@token = UUID.random_create.to_s
 		end
 		
 		def [](key)
@@ -25,6 +25,10 @@ module MemoryLocking
 		def method_missing(meth, *args)
 			@properties.include?(meth.to_sym) ? @properties[meth.to_sym] : nil
 		end
+		
+		def type
+			@properties[:type]
+		end
 	end
 	
 	module ClassMethods
@@ -33,7 +37,7 @@ module MemoryLocking
 		end
 
 		def lockstore
-			@lockstore |= Hash.new
+			@lockstore ||= Hash.new
 		end
 		
 		def timeout=(timeout)
@@ -41,8 +45,8 @@ module MemoryLocking
 		end
 		
 		def locked?(resource, uid = nil)
-			resource = "/#{resource}" unless resource.first == ?/
-
+			resource = "/#{resource}" unless resource.first == "/"
+			
 			# Check if resource is directly locked
 			return lockstore[resource] if lockstore.include?(resource)
 			
@@ -50,7 +54,7 @@ module MemoryLocking
 			depth = 0
 			
 			# Check if resource is indirectly locked
-			while True
+			while true
 				item = File.split(item).first
 				break if item == '/'
 				
@@ -65,7 +69,7 @@ module MemoryLocking
 				end
 			end
 			
-			return false
+			return nil
 		end
 		
 		def check_timeout(resource)
@@ -96,7 +100,7 @@ module MemoryLocking
 			
 			lock = Lock.new(resource, *properties)
 			lockstore[resource] = [lock, lockstore[resource]].flatten.compact
-			
+
 			lock
 		end
 		
