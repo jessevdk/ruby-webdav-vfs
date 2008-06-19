@@ -428,17 +428,56 @@ class WebDAVHandler < AbstractServlet
 		end
 		raise HTTPStatus::Created
 	end
+	
+	def parse_if_header(req)
+		return nil unless req['If']
+		
+		matches = []
+		token = '<[^>]*>'
+		req['If'].scan(/(#{token})?(\s*\(((#{token})|\[([^\]]*)\]\s*)+\))+/) do |resource, lst, token|
+			matches << [normalize_path(resource.gsub(/(<|>)/, '')), token.gsub(/(<|>)/, '').gsub(/^opaquelocktoken:/, '')]
+		end
+		
+		matches
+	end
+	
+	def if_match(req, lock, match)
+		return false unless lock.token == match[1]
+		return false unless lock.uid = req.uid
+		return false if not match[0].empty? and lock.resource != match[0]
+
+		true
+	end
+	
+	def check_lock(req, res)
+		return nil unless @vfs.locking?
+		
+		# Get locks on this resource
+		locks = @vfs.locked?(res.filename)
+		
+		# Check if the current user is the owner of one of the locks
+		matches = parse_if_header(req)
+
+		locks.each do |lock|
+			matches.each do |match|
+				return lock if if_match(req, lock, match)
+			end
+		end
+		
+		raise HTTPStatus::Locked
+	end
 
 	def do_DELETE(req, res)
 		map_filename(req, res)
+		lock = check_lock(req, res)
+
 		begin
 			@logger.debug "rm_rf #{res.filename}"
 			@vfs.remove(res.filename)
+			
+			@vfs.unlock(lock.resource, lock.token, lock.uid) if @vfs.locking? and lock
 		rescue Errno::EPERM
 			raise HTTPStatus::Forbidden
-		#rescue
-			# FIXME: to return correct error.
-			# we needs to stop useing rm_rf and check each deleted entries.
 		end
 		raise HTTPStatus::NoContent
 	end
@@ -702,13 +741,18 @@ class WebDAVHandler < AbstractServlet
 		e
 	end
 
-	def resolv_destpath(req)
-		if /^#{Regexp.escape(req.script_name)}/ =~
-				 HTTPUtils.unescape(URI.parse(req["Destination"]).path)
+	def normalize_path(path)
+	 	HTTPUtils.unescape(URI.parse(path).path)
+
+		if /^#{Regexp.escape(req.script_name)}/ =~ unescape
 			return $'
 		else
-			return URI.parse(req["Destination"]).path
+			return unescape
 		end
+	end
+
+	def resolv_destpath(req)
+		normalize_path(req['Destination'])
 	end
 	
 	def not_modified?(req, res, mtime, etag)
