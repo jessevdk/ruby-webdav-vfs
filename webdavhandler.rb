@@ -416,9 +416,12 @@ class WebDAVHandler < AbstractServlet
 
 	def do_MKCOL(req, res)
 		req.body.nil? or raise HTTPStatus::MethodNotAllowed
+		
+		check_lock(req, res)
+		
 		begin
-			@logger.debug "mkdir #{@root+req.path_info}"
-			@vfs.mkdir(@root + req.path_info)
+			filename = parse_filename(req, res)
+			@vfs.mkdir(filename)
 		rescue Errno::ENOENT, Errno::EACCES
 			raise HTTPStatus::Forbidden
 		rescue Errno::ENOSPC
