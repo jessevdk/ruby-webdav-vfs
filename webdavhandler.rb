@@ -419,11 +419,11 @@ class WebDAVHandler < AbstractServlet
 	def do_MKCOL(req, res)
 		req.body.nil? or raise HTTPStatus::MethodNotAllowed
 		
+		map_filename(req, res)
 		check_lock(req, res)
 		
 		begin
-			filename = parse_filename(req, res)
-			@vfs.mkdir(filename)
+			@vfs.mkdir(res.filename)
 		rescue Errno::ENOENT, Errno::EACCES
 			raise HTTPStatus::Forbidden
 		rescue Errno::ENOSPC
@@ -440,7 +440,7 @@ class WebDAVHandler < AbstractServlet
 		matches = []
 		token = '<[^>]*>'
 		req['If'].scan(/(#{token})?(\s*\(((#{token})|\[([^\]]*)\]\s*)+\))+/) do |resource, lst, token|
-			matches << [normalize_path(resource.gsub(/(<|>)/, '')), token.gsub(/(<|>)/, '').gsub(/^opaquelocktoken:/, '')]
+			matches << [File.join(@root, normalize_path(resource.gsub(/(<|>)/, ''))), token.gsub(/(<|>)/, '').gsub(/^opaquelocktoken:/, '')]
 		end
 		
 		matches
@@ -454,11 +454,11 @@ class WebDAVHandler < AbstractServlet
 		true
 	end
 	
-	def check_lock(req, res)
+	def check_lock(req, res, resource = nil)
 		return nil unless @vfs.locking?
 		
 		# Get locks on this resource
-		locks = @vfs.locked?(res.filename)
+		locks = @vfs.locked?(resource or res.filename)
 		
 		# Check if the current user is the owner of one of the locks
 		matches = parse_if_header(req)
@@ -507,9 +507,12 @@ class WebDAVHandler < AbstractServlet
 
 	def do_MOVE(req, res)
 		src, dest, depth, exists_p = cp_mv_precheck(req, res)
-		@logger.debug "rename #{src} -> #{dest}"
+		
 		begin
 			@vfs.move(src, dest)
+			
+			lock = check_lock(req, res, src)
+			@vfs.unlock_all(lock.resource) if @vfs.locking? and lock
 		rescue Errno::ENOENT
 			raise HTTPStatus::Conflict
 			# FIXME: use multi status(?) and check error URL.
@@ -541,6 +544,13 @@ class WebDAVHandler < AbstractServlet
 		dest = File.join(@root, resolv_destpath(req))
 
 		src == dest and raise HTTPStatus::Forbidden
+		
+		if req.request_method == 'MOVE'
+			# MOVE - check lock on source
+			check_lock(req, res, src)
+		end
+
+		check_lock(req, res, dest)
 
 		exists_p = false
 		if @vfs.exists?(dest)
