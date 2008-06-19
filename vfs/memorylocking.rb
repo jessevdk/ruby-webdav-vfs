@@ -86,7 +86,7 @@ module MemoryLocking
 			
 			if locks
 				locks.each do |lock|
-					return false if lock.scope == 'exclusive'
+					return nil if lock.scope == 'exclusive'
 				end
 			end
 			
@@ -98,6 +98,10 @@ module MemoryLocking
 			lockstore[resource] = [lock, lockstore[resource]].flatten.compact
 			
 			lock
+		end
+		
+		def unlock_all(resource)
+			lockstore.remove(resource)
 		end
 		
 		def unlock(resource, token, uid = nil)

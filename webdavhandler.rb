@@ -472,10 +472,9 @@ class WebDAVHandler < AbstractServlet
 		lock = check_lock(req, res)
 
 		begin
-			@logger.debug "rm_rf #{res.filename}"
 			@vfs.remove(res.filename)
 			
-			@vfs.unlock(lock.resource, lock.token, lock.uid) if @vfs.locking? and lock
+			@vfs.unlock_all(lock.resource) if @vfs.locking? and lock
 		rescue Errno::EPERM
 			raise HTTPStatus::Forbidden
 		end
