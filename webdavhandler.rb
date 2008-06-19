@@ -269,13 +269,20 @@ class WebDAVHandler < AbstractServlet
 			raise HTTPStatus::BadRequest
 		end
 		
+		resource = parse_filename(req, res)
+		
 		if req.body.nil?
 			# Could be a lock refresh
-			raise HTTPStatus::BadRequest if req['If'].nil?
-		else
-			# Find resource
-			resource = parse_filename(req, res)
+			matches = parse_if_header(req, res)
 			
+			matches.each do |match|
+				res = match[0].empty? ? resource : match[0]
+				
+				@vfs.locked?(res).each do |lock|
+					@vfs.refresh(lock) if if_match(req, lock, [res, match[1]])
+				end
+			end
+		else
 			ns = {""=>"DAV:"}
 			items = REXML::XPath.match(req_doc, "/lockinfo", ns)
 			

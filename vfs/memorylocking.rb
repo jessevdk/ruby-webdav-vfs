@@ -104,6 +104,12 @@ module MemoryLocking
 			lockstore.remove(resource)
 		end
 		
+		def refresh(lock)
+			return unless lock.timeout or lock.timeout.downcase == 'infinite' or not @timeout
+			
+			lock.timeout += @timeout
+		end
+		
 		def unlock(resource, token, uid = nil)
 			locks = locked?(resource)
 			match = nil
