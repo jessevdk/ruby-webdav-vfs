@@ -219,9 +219,9 @@ class WebDAVHandler < AbstractServlet
 	end
 	
 	def do_PUT(req, res)
-		map_filename(req, res)
+		filename = File.join(@root, req.path_info)
 		
-		check_lock(req, res)
+		check_lock(req, res, filename)
 
 		if req['range']
 			ranges = HTTPUtils::parse_range_header(req['range']) or
@@ -234,7 +234,7 @@ class WebDAVHandler < AbstractServlet
 		end
 
 		begin						
-			@vfs.iostream(res.filename) do |f|
+			@vfs.iostream(filename) do |f|
 				if ranges
 					# TODO: supports multiple range
 					#ranges.each do |range|
