@@ -454,8 +454,9 @@ class WebDAVHandler < AbstractServlet
 	end
 	
 	def if_match(req, lock, match)
+		
 		return false unless lock.token == match[1]
-		return false unless lock.uid = req.uid
+		return false unless lock.uid == req.user
 		return false if not match[0].empty? and lock.resource != match[0]
 
 		true
