@@ -723,7 +723,7 @@ class WebDAVHandler < AbstractServlet
 		discovery = REXML::Element.new('D:lockdiscovery')
 		
 		locks.each do |lock|
-				e = lock_entry('activelock', lock.scope, lock.type)
+			e = lock_entry('activelock', lock.scope, lock.type)
 			e << gen_element('D:depth', lock.depth)
 		
 			if lock.owner
