@@ -10,6 +10,9 @@ module TestUtilities
 
 	def TestUtilities.included(other)
 		other.extend(ClassMethods)
+		
+		logfile = "#{other.to_s.downcase}.log"
+		File.unlink(logfile) if File.exist?(logfile)
 	end
 	
 	module ClassMethods
