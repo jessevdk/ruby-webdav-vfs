@@ -11,9 +11,9 @@ module MemoryLocking
 	class Lock
 		attr_reader :resource, :properties, :token
 		
-		def initialize(resource, *properties)
+		def initialize(resource, properties)
 			@resource = resource
-			@properties = properties.first
+			@properties = properties
 			
 			@token = UUID.random_create.to_s
 		end
@@ -91,20 +91,39 @@ module MemoryLocking
 			end
 		end
 		
-		def lock(resource, *properties)
+		def child_locked?(resource, exclusive)
+			# This method checks if some child in resource is locked
+			lockstore.each do |key, value|
+				next unless key.index(resource) == 0
+
+				return true if exclusive
+				
+				value.each do |lock|
+					return true if lock.scope == 'exclusive'
+				end
+			end
+			
+			false
+		end
+		
+		def lock(resource, properties)
+			# Check for direct locks of #resource
 			locks = locked?(resource)
 			
 			if locks
 				locks.each do |lock|
-					return nil if lock.scope == 'exclusive'
+					return nil if (lock.scope == 'exclusive' || properties[:scope] == 'exclusive')
 				end
 			end
+			
+			# Check if something within #resource is already locked
+			return nil if child_locked?(resource, properties[:scope])
 			
 			if @timeout and not properties.include?(:timeout)
 				properties[:timeout] = @timeout
 			end
 			
-			lock = Lock.new(resource, *properties)
+			lock = Lock.new(resource, properties)
 			lockstore[resource] = [lock, lockstore[resource]].flatten.compact
 
 			lock

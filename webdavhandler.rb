@@ -299,7 +299,7 @@ class WebDAVHandler < AbstractServlet
 			lock = @vfs.lock(resource, :depth => depth, :scope => scope, :type => type, :owner => owner, :uid => req.user)
 			
 			if not lock				
-				res.body << build_multistat([[req.request_uri, elem_status(req, res, HTTPStatus::Locked)]]).to_s(0)
+				res.body << build_multistat([[req.request_uri, elem_status(req, res, HTTPStatus::Locked)]]).to_s
 
 				res["Content-Type"] = 'text/xml; charset="utf-8"'
 				raise HTTPStatus::MultiStatus
@@ -419,7 +419,7 @@ class WebDAVHandler < AbstractServlet
 			end
 			ret << ps
 		}
-		res.body << build_multistat([[req.request_uri, *ret]]).to_s(0)
+		res.body << build_multistat([[req.request_uri, *ret]]).to_s
 		res["Content-Type"] = 'text/xml; charset="utf-8"'
 		raise HTTPStatus::MultiStatus
 	end
