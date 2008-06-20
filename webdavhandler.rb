@@ -193,7 +193,14 @@ class WebDAVHandler < AbstractServlet
 	
 	def service(req, res)
 		codeconv_req!(req)
-		super
+		
+		if @vfs.respond_to?(:service)
+			@vfs.service(req, res) do
+				super
+			end
+		else
+			super
+		end
 	end
 	
 	def do_GET(req, res)
