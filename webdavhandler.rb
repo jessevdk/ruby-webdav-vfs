@@ -744,8 +744,14 @@ class WebDAVHandler < AbstractServlet
 	
 	def lock_entry(name, scope, type)
 		entry = REXML::Element.new("D:#{name}")
-		entry << (REXML::Element.new('D:lockscope') << REXML::Element.new("D:#{scope}"))
-		entry << (REXML::Element.new('D:locktype') << REXML::Element.new("D:#{type}"))
+		
+		s = REXML::Element.new('D:lockscope')
+		s << REXML::Element.new("D:#{scope}")
+		entry << s
+		
+		s = REXML::Element.new('D:locktype')
+		s << REXML::Element.new("D:#{type}")
+		entry << s
 		
 		entry
 	end
