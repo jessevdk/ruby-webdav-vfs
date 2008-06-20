@@ -395,6 +395,11 @@ class WebDAVHandler < AbstractServlet
 
 	def do_PROPPATCH(req, res)
 		map_filename(req, res)
+		
+		if not @vfs.exist?(res.filename)
+			raise HTTPStatus::NotFound
+		end
+		
 		ret = []
 		ns = {""=>"DAV:"}
 		begin
