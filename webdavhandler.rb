@@ -8,6 +8,7 @@
 require 'time'
 require 'fileutils.rb'
 require 'rexml/document'
+require 'webrick'
 require 'webrick/httpservlet/filehandler'
 require 'iconv'
 
@@ -273,7 +274,7 @@ class WebDAVHandler < AbstractServlet
 		
 		if req.body.nil?
 			# Could be a lock refresh
-			matches = parse_if_header(req)
+			matches = parse_if_header(req, res)
 			
 			matches.each do |match|
 				res = match[0].empty? ? resource : match[0]
@@ -441,15 +442,21 @@ class WebDAVHandler < AbstractServlet
 		raise HTTPStatus::Created
 	end
 	
-	def parse_if_header(req)
+	def parse_if_header(req, res)
 		return [] unless req['If']
 		
 		matches = []
 		token = '<[^>]*>'
 		req['If'].scan(/(#{token})?(\s*\(((#{token})|\[([^\]]*)\]\s*)+\))+/) do |resource, lst, token|
-			matches << [File.join(@root, normalize_path(resource.gsub(/(<|>)/, ''))), token.gsub(/(<|>)/, '').gsub(/^opaquelocktoken:/, '')]
-		end
+			if resource
+				resource = File.join(@root, normalize_path(req, resource.gsub(/(<|>)/, '')))
+			else
+				resource = parse_filename(req, res)
+			end
 		
+			matches << [resource, token.gsub(/(<|>)/, '').gsub(/^opaquelocktoken:/, '')]
+		end
+
 		matches
 	end
 	
@@ -467,10 +474,12 @@ class WebDAVHandler < AbstractServlet
 		
 		# Get locks on this resource
 		locks = @vfs.locked?(resource || res.filename)
-		
-		# Check if the current user is the owner of one of the locks
-		matches = parse_if_header(req)
 
+		return nil unless locks
+
+		# Check if the current user is the owner of one of the locks
+		matches = parse_if_header(req, res)
+		
 		locks.each do |lock|
 			matches.each do |match|
 				return lock if if_match(req, lock, match)
@@ -775,8 +784,8 @@ class WebDAVHandler < AbstractServlet
 		e
 	end
 
-	def normalize_path(path)
-	 	HTTPUtils.unescape(URI.parse(path).path)
+	def normalize_path(req, path)
+	 	unescape = HTTPUtils.unescape(URI.parse(path).path)
 
 		if /^#{Regexp.escape(req.script_name)}/ =~ unescape
 			return $'
@@ -786,7 +795,7 @@ class WebDAVHandler < AbstractServlet
 	end
 
 	def resolv_destpath(req)
-		normalize_path(req['Destination'])
+		normalize_path(req, req['Destination'])
 	end
 	
 	def not_modified?(req, res, mtime, etag)
