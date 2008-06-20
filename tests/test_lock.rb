@@ -31,8 +31,20 @@ class LockTest < Test::Unit::TestCase
 		@http.request(req)
 	end
 	
+	def assert_prop_xpath(doc, path)
+		assert_not_nil(REXML::XPath.first(doc, "/multistatus/response/propstat/prop/#{path}", {'', 'DAV:'}))
+	end
+	
 	def assert_lock_xpath(doc, path)
-		assert_not_nil(REXML::XPath.first(doc, "/multistatus/response/propstat/prop/lockdiscovery/activelock/#{path}", {'', 'DAV:'}))
+		assert_prop_xpath(doc, "lockdiscovery/activelock/#{path}")
+	end
+	
+	def assert_lock_response(doc)
+		assert_lock_xpath(doc, 'lockscope/exclusive')
+		assert_lock_xpath(doc, 'locktype/write')
+		assert_lock_xpath(doc, 'locktoken/href')
+		assert_lock_xpath(doc, 'depth[text() = "0"]')
+		assert_lock_xpath(doc, 'owner/href[text() = "http://www.icecrew.nl"]')
 	end
 	
 	def test_lock
@@ -46,11 +58,7 @@ class LockTest < Test::Unit::TestCase
 		
 		# Check response content
 		doc = REXML::Document.new(res.body)
-		assert_lock_xpath(doc, 'lockscope/exclusive')
-		assert_lock_xpath(doc, 'locktype/write')
-		assert_lock_xpath(doc, 'locktoken/href')
-		assert_lock_xpath(doc, 'depth[text() = "0"]')
-		assert_lock_xpath(doc, 'owner/href[text() = "http://www.icecrew.nl"]')
+		assert_lock_response(doc)
 		
 		assert(res['Lock-Token'].gsub(/^<(.*)>$/, '\1'), REXML::XPath.first(doc, '/multistatus/response/propstat/prop/lockdiscovery/activelock/locktoken/href', {'', 'DAV:'}).text)
 	end
@@ -188,6 +196,49 @@ class LockTest < Test::Unit::TestCase
 		
 		doc = REXML::Document.new(res.body)
 		assert_not_nil(REXML::XPath.first(doc, '/multistatus/response/status[text() = "HTTP/1.1 423 Locked"]', {'', 'DAV:'}))
+	end
+	
+	def request_propfind(*properties)
+		d = REXML::Document.new
+		e = REXML::Element.new('D:propfind')
+		e.attributes['xmlns:D'] = 'DAV:'
+		e << REXML::Element.new('D:prop')
+		
+		properties.each {|x| e[0] << REXML::Element.new("D:#{x}")}
+		d << e
+	end
+	
+	def test_lock_discovery
+		lock_resource('/file1')
+		req = Net::HTTP::Propfind.new('/file1')
+		req['Depth'] = 0
+		
+		d = request_propfind('lockdiscovery')
+
+		req.body = d.to_s
+		res = @http.request(req)
+		
+		assert_code(WEBrick::HTTPStatus::MultiStatus, res)
+		
+		d = REXML::Document.new(res.body)
+		assert_lock_response(d)
+	end
+	
+	def test_lock_supported
+		req = Net::HTTP::Propfind.new('/')
+		req['Depth'] = 0
+		
+		d = request_propfind('supportedlock')
+		req.body = d.to_s
+		res = @http.request(req)
+		
+		assert_code(WEBrick::HTTPStatus::MultiStatus, res)
+		
+		doc = REXML::Document.new(res.body)
+		assert_prop_xpath(doc, 'supportedlock/lockentry/lockscope/exclusive')
+		assert_prop_xpath(doc, 'supportedlock/lockentry/lockscope/shared')
+		
+		assert_prop_xpath(doc, 'supportedlock/lockentry/locktype/write')
 	end
 end
 
