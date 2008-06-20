@@ -304,7 +304,7 @@ class WebDAVHandler < AbstractServlet
 				
 			# Try to lock the resource
 			lock = @vfs.lock(resource, :depth => depth, :scope => scope, :type => type, :owner => owner, :uid => req.user)
-			
+
 			if not lock				
 				res.body << build_multistat([[req.request_uri, elem_status(req, res, HTTPStatus::Locked)]]).to_s
 
@@ -337,16 +337,19 @@ class WebDAVHandler < AbstractServlet
 	def do_OPTIONS(req, res)
 		@logger.debug "run do_OPTIONS"
 		
-		# Just pretend to support class 2 functions like locking to fool
-		# OS X into thinking we can. This allows OS X to access resources
-		# read/write instead of read-only
 		res["DAV"] = @vfs.locking? ? "2" : "1"
 		res["MS-Author-Via"] = "DAV"
 		super
 	end
 
 	def propfind_response(req, res, props, depth)
-		ret = get_rec_prop(req, res, res.filename, HTTPUtils.escape(codeconv_str_fscode2utf(req.path)), props, *[depth].compact)
+		filename = parse_filename(req, res)
+
+		if not @vfs.exists?(filename)
+			raise HTTPStatus::NotFound
+		end
+
+		ret = get_rec_prop(req, res, filename, HTTPUtils.escape(codeconv_str_fscode2utf(req.path)), props, *[depth].compact)
 
 		res.body << build_multistat(ret).to_s
 		res["Content-Type"] = 'text/xml; charset="utf-8"'
@@ -481,7 +484,6 @@ class WebDAVHandler < AbstractServlet
 		
 		# Get locks on this resource
 		locks = @vfs.locked?(resource || res.filename)
-
 		return nil unless locks
 
 		# Check if the current user is the owner of one of the locks
@@ -618,7 +620,7 @@ class WebDAVHandler < AbstractServlet
 		if @vfs.respond_to?(:parse_filename)
 			filename = @vfs.parse_filename(req, res)
 		else
-			filename = (req.path_info and File.join(@root, req.path_info)) or @root
+			filename = ((req.path_info and File.join(@root, req.path_info)) or @root)
 			filename.gsub(/\/+$/, '')
 		end
 
@@ -641,8 +643,7 @@ class WebDAVHandler < AbstractServlet
 	end
 
 	def elem_status(req, res, retcodesym)
-		gen_element("D:status",
-								"HTTP/#{req.http_version} #{retcodesym.code} #{retcodesym.reason_phrase}")
+		gen_element("D:status", "HTTP/#{req.http_version} #{retcodesym.code} #{retcodesym.reason_phrase}")
 	end
 
 	def get_rec_prop(req, res, file, r_uri, props, depth = 5000)
@@ -669,9 +670,16 @@ class WebDAVHandler < AbstractServlet
 		}
 		ret_set
 	end
+	
+	def elem_error_status(req, res, name, err)
+		r = REXML::Element.new
+	end
 
 	def get_propstat(req, res, file, props)
+		propstats = []
 		propstat = REXML::Element.new "D:propstat"
+		propstats << propstat
+		
 		errstat = {}
 		begin
 			st = @vfs.properties(file)
@@ -685,17 +693,22 @@ class WebDAVHandler < AbstractServlet
 					end
 				rescue IgnoreProp
 					# simple ignore
-				rescue HTTPStatus::Status
+				rescue HTTPStatus::Status => e
 					# FIXME: add to errstat
+					ps = REXML::Element.new("D:propstat")
+					ps << gen_element('D:prop', gen_element("D:#{pname}"))
+					ps << elem_status(req, res, e)
+					
+					propstats << ps
 				end
 			}
 			propstat.elements << pe
 			propstat.elements << elem_status(req, res, HTTPStatus::OK)
-		rescue
+		rescue Exception => e
 			propstat.elements << elem_status(req, res, HTTPStatus::InternalServerError)
 		end
 
-		propstat
+		propstats
 	end
 
 	def get_prop_creationdate(req, props)
