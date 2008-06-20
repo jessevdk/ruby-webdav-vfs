@@ -3,7 +3,6 @@ require 'test/unit/ui/console/testrunner'
 
 require 'fileutils'
 require 'webdavhandler'
-require 'vfs/local'
 
 module TestUtilities
 	module ClassMethods; end
@@ -34,6 +33,7 @@ module TestUtilities
 		d = File.dirname(File.expand_path(__FILE__))
 		tfs = File.join(d, 'testfs')
 	
+		FileUtils.rm_rf(tfs) if File.exist?(tfs)
 		FileUtils.mkdir(tfs)
 		FileUtils.touch([File.join(tfs, 'file1')])
 		FileUtils.touch([File.join(tfs, 'file2')])
@@ -54,15 +54,10 @@ module TestUtilities
 		setup_testfs
 		
 		Object.class_eval do
-			remove_const 'MemoryLocking'
+			remove_const 'LockedLocal' if const_defined?('LockedLocal')
 		end
 		
-		VFS.class_eval do
-			remove_const 'Local'
-		end
-		
-		load('vfs/memorylocking.rb')
-		load('vfs/local.rb')
+		load('tests/lockedlocal.rb')
 		
 		log = WEBrick::Log.new("#{self.class.to_s.downcase}.log")
 
@@ -75,8 +70,8 @@ module TestUtilities
 		
 		@serverthread = Thread.new do
 			@server.mount("/", WEBrick::HTTPServlet::WebDAVHandler, 
-				:Root => File.join(File.dirname(File.expand_path(__FILE__)),  'testfs'), 
-				:VFS => VFS::Local)
+				:Root => File.join(File.dirname(File.expand_path(__FILE__)), 'testfs'), 
+				:VFS => LockedLocal)
 
 			trap(:INT) { @server.shutdown }
 			@server.start
