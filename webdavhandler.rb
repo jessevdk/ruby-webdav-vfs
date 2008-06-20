@@ -291,9 +291,9 @@ class WebDAVHandler < AbstractServlet
 
 			raise HTTPStatus::BadRequest unless item
 			depth = req['Depth'] =~ /^infinite$/i ? 'infinite' : 0
-			scope = (v = REXML::XPath.first(item, 'lockscope', ns)) and v.name
-			type = (v = REXML::XPath.first(item, 'locktype', ns)) and v.name
-			owner = REXML::XPath.first(item, 'owner', ns)
+			scope = (v = REXML::XPath.first(item, 'lockscope/*', ns)) && v.name
+			type = (v = REXML::XPath.first(item, 'locktype/*', ns)) && v.name
+			owner = REXML::XPath.first(item, 'owner/*', ns)
 				
 			# Try to lock the resource
 			lock = @vfs.lock(resource, :depth => depth, :scope => scope, :type => type, :owner => owner, :uid => req.user)
@@ -760,13 +760,8 @@ class WebDAVHandler < AbstractServlet
 	def lock_entry(name, scope, type)
 		entry = REXML::Element.new("D:#{name}")
 		
-		s = REXML::Element.new('D:lockscope')
-		s << REXML::Element.new("D:#{scope}")
-		entry << s
-		
-		s = REXML::Element.new('D:locktype')
-		s << REXML::Element.new("D:#{type}")
-		entry << s
+		entry << gen_element('D:lockscope', scope ? gen_element("D:#{scope}") : nil)
+		entry << gen_element('D:locktype', type ? gen_element("D:#{type}") : nil)
 		
 		entry
 	end
@@ -783,9 +778,15 @@ class WebDAVHandler < AbstractServlet
 		gen_element "D:multistatus", nil, {"xmlns:D" => "DAV:"}
 	end
 
-	def gen_element(elem, text = nil, attrib = {})
-		e = REXML::Element.new elem
-		text and e.text = text
+	def gen_element(elem, child = nil, attrib = {})
+		e = REXML::Element.new(elem)
+		
+		if child.is_a?(REXML::Element)
+			e << child
+		elsif child
+			e.text = child.to_s
+		end
+		
 		attrib.each {|k, v| e.attributes[k] = v }
 		e
 	end
