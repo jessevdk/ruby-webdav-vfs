@@ -12,9 +12,8 @@ end
 
 log = WEBrick::Log.new
 serv = WEBrick::HTTPServer.new({ 
-	:Port => 10080, 
-	:Logger => log, 
-	:BindAddress => '192.168.1.12'
+	:Port => 1111, 
+	:Logger => log
 })
 
 serv.mount("/", WEBrick::HTTPServlet::WebDAVHandler, :Root => Dir.pwd, :VFS => LockedLocal)
