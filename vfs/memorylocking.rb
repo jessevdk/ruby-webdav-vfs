@@ -51,7 +51,7 @@ module MemoryLocking
 		end
 		
 		def locked?(resource, uid = nil)
-			resource = "/#{resource}" unless resource.first == "/"
+			resource = "/#{resource}" unless resource[0] == ?/
 			
 			# Check if resource is directly locked
 			return lockstore[resource] if lockstore.include?(resource)
@@ -62,29 +62,29 @@ module MemoryLocking
 			# Check if resource is indirectly locked
 			while true
 				item = File.split(item).first
-				break if item == '/'
 				
 				if lockstore.include?(item)
 					locks = check_timeout(item)
 					
 					locks.each do |lock|
-						return lock if lock.dept == 'infinite' or lock.depth == depth
+						return lock if (lock.depth == 'infinite' or lock.depth == depth)
 					end
-
-					depth += 1
 				end
+
+				break if item == '/'
+				depth += 1
 			end
 			
 			return nil
 		end
 		
 		def check_timeout(resource)
-			lockstore[resource].delete_if! do |lock|
+			lockstore[resource].delete_if do |lock|
 				lock.timeout and lock.timeout.downcase != 'infinite' and lock.timeout < Time.now
 			end
 			
 			if lockstore[resource].empty?
-				lockstore.remove(resource)
+				lockstore.delete(resource)
 				[]
 			else
 				lockstore[resource]
@@ -111,7 +111,7 @@ module MemoryLocking
 		end
 		
 		def unlock_all(resource)
-			lockstore.remove(resource)
+			lockstore.delete(resource)
 		end
 		
 		def refresh(lock)
@@ -126,15 +126,17 @@ module MemoryLocking
 
 			if locks
 				locks.each do |lock|
-					match = lock.token == token and lock.uid == uid
-					break if match
+					if lock.token == token and lock.uid == uid
+						match = lock
+						break
+					end
 				end
 			end
 			
 			return false unless match
-			locks.remove(match)
+			locks.delete(match)
 			
-			lockstore.remove(match.resource) if locks.emty?
+			lockstore.delete(match.resource) if locks.empty?
 
 			true
 		end
