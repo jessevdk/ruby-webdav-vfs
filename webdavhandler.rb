@@ -736,14 +736,20 @@ class WebDAVHandler < AbstractServlet
 			e << gen_element('D:depth', lock.depth)
 		
 			if lock.owner
-				e << (REXML::Element.new('D:owner') << lock.owner)
+				owner = REXML::Element.new('D:owner')
+				owner << lock.owner
+				
+				e << owner
 			end
 		
 			if lock.timeout
 				e << gen_element('D:timeout', lock.timeout)
 			end
 		
-			e << (REXML::Element.new('D:locktoken') << gen_element('D:href', "opaquelocktoken:#{lock.token}"))
+			token = REXML::Element.new('D:locktoken') 
+			token << gen_element('D:href', "opaquelocktoken:#{lock.token}")
+			
+			e << token
 			
 			discovery << e
 		end
