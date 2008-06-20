@@ -26,8 +26,14 @@ module MemoryLocking
 			@properties.include?(meth.to_sym) ? @properties[meth.to_sym] : nil
 		end
 		
+		# Overload type, because ruby already defines it
 		def type
 			@properties[:type]
+		end
+		
+		# Overload private timeout, who defines it, we don't know
+		def timeout
+			@properties[:timeout]
 		end
 	end
 	
