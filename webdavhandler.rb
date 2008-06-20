@@ -305,7 +305,7 @@ class WebDAVHandler < AbstractServlet
 			end
 			
 			# Respond with propfinding the lockdiscovery property
-			res['Lock-Token'] = "<opaquetoken:#{lock.token}>"
+			res['Lock-Token'] = "<opaquelocktoken:#{lock.token}>"
 			propfind_response(req, res, ['lockdiscovery'], 0)
 		end
 	end
