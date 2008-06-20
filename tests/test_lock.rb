@@ -177,6 +177,18 @@ class LockTest < Test::Unit::TestCase
 		assert_code(WEBrick::HTTPStatus::Locked, res)
 		assert(!exists?('folder3'), 'folder3 must not exist!')
 	end
+	
+	def test_lock_parent
+		lock_resource('/file1')
+		res = lock_resource('/')
+		
+		# Resulting code should be Locked since there is already a lock
+		# active
+		assert_code(WEBrick::HTTPStatus::MultiStatus, res)
+		
+		doc = REXML::Document.new(res.body)
+		assert_not_nil(REXML::XPath.first(doc, '/multistatus/response/status[text() = "HTTP/1.1 423 Locked"]', {'', 'DAV:'}))
+	end
 end
 
 
