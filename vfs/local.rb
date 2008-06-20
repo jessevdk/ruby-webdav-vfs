@@ -116,7 +116,7 @@ module VFS
 				break unless File.directory?(res.filename + base)
 				shift_path_info(req, res, path_info)
 			end
-
+			
 			if base = path_info.first
 				raise WEBrick::HTTPStatus::NotFound if filtered?(base)
 
@@ -128,16 +128,14 @@ module VFS
 					shift_path_info(req, res, path_info, base)
 				end
 			end
-			
-			return res.filename
+
+			return res.filename.gsub(/\/+$/, '')
 		end
 		
 		def self.shift_path_info(req, res, path_info, base=nil)
 			tmp = path_info.shift
 			base = base || tmp
-			req.path_info = path_info.join
-			req.script_name << base
-			res.filename << base
+			res.filename = File.join(res.filename, base)
 		end
 	end
 end
