@@ -30,7 +30,11 @@ class LockTest < Test::Unit::TestCase
 		
 		@http.request(req)
 	end
-		
+	
+	def assert_lock_xpath(doc, path)
+		assert_not_nil(REXML::XPath.first(doc, "/multistatus/response/propstat/prop/lockdiscovery/activelock/#{path}", {'', 'DAV:'}))
+	end
+	
 	def test_lock
 		res = lock_resource('/file1')
 		
@@ -39,6 +43,16 @@ class LockTest < Test::Unit::TestCase
 		
 		# Needs Lock-Token header
 		assert_not_nil(res['Lock-Token'])
+		
+		# Check response content
+		doc = REXML::Document.new(res.body)
+		assert_lock_xpath(doc, 'lockscope/exclusive')
+		assert_lock_xpath(doc, 'locktype/write')
+		assert_lock_xpath(doc, 'locktoken/href')
+		assert_lock_xpath(doc, 'depth[text() = "0"]')
+		assert_lock_xpath(doc, 'owner/href[text() = "http://www.icecrew.nl"]')
+		
+		assert(res['Lock-Token'].gsub(/^<(.*)>$/, '\1'), REXML::XPath.first(doc, '/multistatus/response/propstat/prop/lockdiscovery/activelock/locktoken/href', {'', 'DAV:'}).text)
 	end
 	
 	def test_unlock
