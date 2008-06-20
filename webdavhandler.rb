@@ -289,7 +289,7 @@ class WebDAVHandler < AbstractServlet
 			item = REXML::XPath.first(req_doc, "/lockinfo", ns)
 
 			raise HTTPStatus::BadRequest unless item
-			depth = req['Depth'] == 'infinite' ? 'infinite' : 0
+			depth = req['Depth'] =~ /^infinite$/i ? 'infinite' : 0
 			scope = (v = REXML::XPath.first(item, 'lockscope', ns)) and v.name
 			type = (v = REXML::XPath.first(item, 'locktype', ns)) and v.name
 			owner = REXML::XPath.first(item, 'owner', ns)
