@@ -1,10 +1,7 @@
 require 'vfs/abstract'
-require 'vfs/memorylocking'
 
 module VFS		
 	class Local < Abstract
-		include MemoryLocking
-		
 		class Properties < VFS::Properties
 			def initialize(vfs, filename)
 				super
