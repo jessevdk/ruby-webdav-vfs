@@ -371,10 +371,10 @@ class WebDAVHandler < AbstractServlet
 
 		ns = {""=>"DAV:"}
 		req_props = []
-		all_props = %w(creationdate getlastmodified getetag resourcetype getcontenttype getcontentlength)
+		all_props = %w(creationdate getlastmodified getetag resourcetype getcontenttype getcontentlength displayname)
 		
 		if @vfs.locking?
-			all_props += %w(suppertedlock lockdiscovery)
+			all_props += %w(supportedlock lockdiscovery)
 		end	 
 
 		if req.body.nil? || !REXML::XPath.match(req_doc, "/propfind/allprop", ns).empty?
@@ -714,6 +714,10 @@ class WebDAVHandler < AbstractServlet
 		end
 
 		propstats
+	end
+	
+	def get_prop_displayname(req, props)
+		gen_element "D:displayname", props.displayname
 	end
 
 	def get_prop_creationdate(req, props)

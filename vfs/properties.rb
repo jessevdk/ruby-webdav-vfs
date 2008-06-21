@@ -7,6 +7,10 @@ module VFS
 			@vfs = vfs
 		end
 		
+		def displayname
+			File.basename(@filename)
+		end
+		
 		def creationdate
 		end
 		
